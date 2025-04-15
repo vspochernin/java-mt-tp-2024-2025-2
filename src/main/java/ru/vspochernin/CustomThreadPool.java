@@ -12,10 +12,12 @@ public class CustomThreadPool implements CustomExecutor {
     private final int minSpareThreads;
     private final long keepAliveTime;
     private final TimeUnit timeUnit;
-    private final BlockingQueue<Runnable> taskQueue;
+    private final int queueSize;
+    private final List<BlockingQueue<Runnable>> taskQueues;
     private final ThreadFactory threadFactory;
     private final List<Worker> workers;
     private final AtomicInteger activeWorkers;
+    private final AtomicInteger nextQueueIndex;
     private volatile boolean isShutdown;
 
     public CustomThreadPool(
@@ -31,28 +33,37 @@ public class CustomThreadPool implements CustomExecutor {
         this.minSpareThreads = minSpareThreads;
         this.keepAliveTime = keepAliveTime;
         this.timeUnit = timeUnit;
-        this.taskQueue = new LinkedBlockingQueue<>(queueSize);
+        this.queueSize = queueSize;
+        this.taskQueues = new ArrayList<>();
         this.threadFactory = new CustomThreadFactory("CustomThreadPool");
         this.workers = new ArrayList<>();
         this.activeWorkers = new AtomicInteger(0);
+        this.nextQueueIndex = new AtomicInteger(0);
         this.isShutdown = false;
 
-        // Инициализация базовых потоков.
-        for (int i = 0; i < this.corePoolSize; i++) {
-            addWorker();
+        // Инициализация базовых потоков и очередей.
+        for (int i = 0; i < corePoolSize; i++) {
+            BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(queueSize);
+            taskQueues.add(queue);
+            addWorker(queue);
         }
     }
 
-    private void addWorker() {
+    private void addWorker(BlockingQueue<Runnable> queue) {
         if (activeWorkers.get() >= maxPoolSize) {
             return;
         }
 
-        Worker worker = new Worker(taskQueue, keepAliveTime, timeUnit);
+        Worker worker = new Worker(queue, keepAliveTime, timeUnit, this);
         workers.add(worker);
         Thread thread = threadFactory.newThread(worker);
         thread.start();
         activeWorkers.incrementAndGet();
+    }
+
+    private BlockingQueue<Runnable> getNextQueue() {
+        int index = nextQueueIndex.getAndIncrement() % taskQueues.size();
+        return taskQueues.get(index);
     }
 
     @Override
@@ -61,18 +72,24 @@ public class CustomThreadPool implements CustomExecutor {
             throw new RejectedExecutionException("[Rejected] ThreadPool is shutdown");
         }
 
-        if (!taskQueue.offer(command)) {
-            if (activeWorkers.get() < maxPoolSize) {
-                addWorker();
-                if (!taskQueue.offer(command)) {
-                    throw new RejectedExecutionException("[Rejected] Queue is full and cannot create new worker");
-                }
-            } else {
-                throw new RejectedExecutionException("[Rejected] Queue is full and max pool size reached");
+        // Сначала проверяем, можем ли создать новый воркер.
+        if (activeWorkers.get() < maxPoolSize) {
+            BlockingQueue<Runnable> newQueue = new LinkedBlockingQueue<>(queueSize);
+            taskQueues.add(newQueue);
+            addWorker(newQueue);
+            if (newQueue.offer(command)) {
+                System.out.println("[Pool] Task accepted into new queue #" + (taskQueues.size() - 1));
+                return;
             }
         }
 
-        System.out.println("[Pool] Task accepted into queue");
+        // Если не смогли создать новый воркер, пробуем добавить в существующую очередь.
+        BlockingQueue<Runnable> queue = getNextQueue();
+        if (!queue.offer(command)) {
+            throw new RejectedExecutionException("[Rejected] Queue is full and max pool size reached");
+        }
+
+        System.out.println("[Pool] Task accepted into queue #" + taskQueues.indexOf(queue));
     }
 
     @Override
@@ -93,9 +110,22 @@ public class CustomThreadPool implements CustomExecutor {
     @Override
     public void shutdownNow() {
         isShutdown = true;
-        taskQueue.clear();
+        for (BlockingQueue<Runnable> queue : taskQueues) {
+            queue.clear();
+        }
         for (Worker worker : workers) {
             worker.stop();
         }
+    }
+
+    synchronized boolean canTerminateWorker() {
+        return activeWorkers.get() > corePoolSize && 
+               activeWorkers.get() > minSpareThreads;
+    }
+
+    synchronized void workerTerminated(Worker worker) {
+        workers.remove(worker);
+        activeWorkers.decrementAndGet();
+        taskQueues.remove(worker.getQueue());
     }
 } 

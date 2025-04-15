@@ -8,12 +8,14 @@ public class Worker implements Runnable {
     private final BlockingQueue<Runnable> taskQueue;
     private final long keepAliveTime;
     private final TimeUnit timeUnit;
+    private final CustomThreadPool pool;
     private volatile boolean isRunning = true;
 
-    public Worker(BlockingQueue<Runnable> taskQueue, long keepAliveTime, TimeUnit timeUnit) {
+    public Worker(BlockingQueue<Runnable> taskQueue, long keepAliveTime, TimeUnit timeUnit, CustomThreadPool pool) {
         this.taskQueue = taskQueue;
         this.keepAliveTime = keepAliveTime;
         this.timeUnit = timeUnit;
+        this.pool = pool;
     }
 
     public void stop() {
@@ -30,8 +32,10 @@ public class Worker implements Runnable {
                     System.out.println("[Worker] " + Thread.currentThread().getName() + " executes task");
                     task.run();
                 } else {
-                    System.out.println("[Worker] " + Thread.currentThread().getName() + " idle timeout, stopping");
-                    break;
+                    if (pool.canTerminateWorker()) {
+                        System.out.println("[Worker] " + Thread.currentThread().getName() + " idle timeout, stopping");
+                        break;
+                    }
                 }
             } catch (InterruptedException e) {
                 if (!isRunning) {
@@ -39,6 +43,11 @@ public class Worker implements Runnable {
                 }
             }
         }
+        pool.workerTerminated(this);
         System.out.println("[Worker] " + Thread.currentThread().getName() + " terminated");
+    }
+
+    public BlockingQueue<Runnable> getQueue() {
+        return taskQueue;
     }
 } 
