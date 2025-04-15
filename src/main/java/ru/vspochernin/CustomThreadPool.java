@@ -127,8 +127,8 @@ public class CustomThreadPool implements CustomExecutor {
         for (Worker worker : workers) {
             worker.stop();
         }
-        
-        // Ждем завершения всех воркеров
+
+        // Ждем завершения всех воркеров.
         for (Worker worker : workers) {
             try {
                 worker.awaitTermination();
@@ -147,7 +147,7 @@ public class CustomThreadPool implements CustomExecutor {
         for (Worker worker : workers) {
             worker.stop();
         }
-        // Не ждем завершения воркеров, так как это немедленное завершение
+        // Не ждем завершения воркеров, так как это немедленное завершение.
     }
 
     synchronized boolean canTerminateWorker() {
