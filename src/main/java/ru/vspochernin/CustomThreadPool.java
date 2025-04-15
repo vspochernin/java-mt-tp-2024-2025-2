@@ -18,6 +18,7 @@ public class CustomThreadPool implements CustomExecutor {
     private final List<Worker> workers;
     private final AtomicInteger activeWorkers;
     private final AtomicInteger nextQueueIndex;
+    private final CustomRejectedExecutionHandler rejectedExecutionHandler;
     private volatile boolean isShutdown;
 
     public CustomThreadPool(
@@ -27,6 +28,25 @@ public class CustomThreadPool implements CustomExecutor {
             long keepAliveTime,
             TimeUnit timeUnit,
             int queueSize)
+    {
+        this(
+                corePoolSize,
+                maxPoolSize,
+                minSpareThreads,
+                keepAliveTime,
+                timeUnit,
+                queueSize,
+                RejectedExecutionPolicies.ABORT);
+    }
+
+    public CustomThreadPool(
+            int corePoolSize,
+            int maxPoolSize,
+            int minSpareThreads,
+            long keepAliveTime,
+            TimeUnit timeUnit,
+            int queueSize,
+            CustomRejectedExecutionHandler rejectedExecutionHandler)
     {
         this.corePoolSize = corePoolSize;
         this.maxPoolSize = maxPoolSize;
@@ -39,6 +59,7 @@ public class CustomThreadPool implements CustomExecutor {
         this.workers = new ArrayList<>();
         this.activeWorkers = new AtomicInteger(0);
         this.nextQueueIndex = new AtomicInteger(0);
+        this.rejectedExecutionHandler = rejectedExecutionHandler;
         this.isShutdown = false;
 
         // Инициализация базовых потоков и очередей.
@@ -86,7 +107,8 @@ public class CustomThreadPool implements CustomExecutor {
         // Если не смогли создать новый воркер, пробуем добавить в существующую очередь.
         BlockingQueue<Runnable> queue = getNextQueue();
         if (!queue.offer(command)) {
-            throw new RejectedExecutionException("[Rejected] Queue is full and max pool size reached");
+            rejectedExecutionHandler.rejectedExecution(command, this);
+            return;
         }
 
         System.out.println("[Pool] Task accepted into queue #" + taskQueues.indexOf(queue));
@@ -119,8 +141,8 @@ public class CustomThreadPool implements CustomExecutor {
     }
 
     synchronized boolean canTerminateWorker() {
-        return activeWorkers.get() > corePoolSize && 
-               activeWorkers.get() > minSpareThreads;
+        return activeWorkers.get() > corePoolSize &&
+                activeWorkers.get() > minSpareThreads;
     }
 
     synchronized void workerTerminated(Worker worker) {

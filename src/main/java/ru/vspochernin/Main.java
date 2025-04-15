@@ -5,6 +5,15 @@ import java.util.concurrent.RejectedExecutionException;
 
 public class Main {
     public static void main(String[] args) {
+        // Демонстрация разных политик отказа
+        demonstrateRejectionPolicy(RejectedExecutionPolicies.ABORT, "ABORT");
+        demonstrateRejectionPolicy(RejectedExecutionPolicies.CALLER_RUNS, "CALLER_RUNS");
+        demonstrateRejectionPolicy(RejectedExecutionPolicies.RETRY_AFTER_DELAY(1, TimeUnit.SECONDS), "RETRY");
+    }
+
+    private static void demonstrateRejectionPolicy(CustomRejectedExecutionHandler policy, String policyName) {
+        System.out.println("\n=== Demonstrating " + policyName + " policy ===");
+        
         // Создаем пул с маленькими параметрами для демонстрации отклонений:
         // corePoolSize = 2
         // maxPoolSize = 3
@@ -14,7 +23,7 @@ public class Main {
         CustomThreadPool pool = new CustomThreadPool(
             2, 3, 1,
             1, TimeUnit.SECONDS,
-            2
+            2, policy
         );
 
         // Создаем и отправляем задачи быстрее, чем они могут быть обработаны
