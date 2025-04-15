@@ -10,17 +10,23 @@ public class Worker implements Runnable {
     private final TimeUnit timeUnit;
     private final CustomThreadPool pool;
     private volatile boolean isRunning = true;
+    private final Thread workerThread;
 
     public Worker(BlockingQueue<Runnable> taskQueue, long keepAliveTime, TimeUnit timeUnit, CustomThreadPool pool) {
         this.taskQueue = taskQueue;
         this.keepAliveTime = keepAliveTime;
         this.timeUnit = timeUnit;
         this.pool = pool;
+        this.workerThread = Thread.currentThread();
     }
 
     public void stop() {
         isRunning = false;
-        Thread.currentThread().interrupt();
+        workerThread.interrupt();
+    }
+
+    public void awaitTermination() throws InterruptedException {
+        workerThread.join();
     }
 
     @Override
